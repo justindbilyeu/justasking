@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>JustAsking — Idea Resonator</title>
+<meta name="description" content="Paste an idea → generate model-specific prompts for Grok / DeepSeek / Gemini / Claude → synthesize results. Optional GP/ITPU lens." />
+<style>
+  :root {
+    --bg:#0b0e14; --panel:#121722; --soft:#1a2130; --ink:#e6eefc;
+    --muted:#9fb0d3; --accent:#7bdcf7; --accent2:#b090ff; --ok:#8af7a6; --warn:#ffd37a;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji","Segoe UI Emoji";
+  }
+  *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#0b0e14 0%, #0c111b 100%); color:var(--ink); font-family:var(--sans)}
+  header{padding:22px 20px;border-bottom:1px solid #1d2433;background:linear-gradient(180deg,#0f1420,#0d1320)}
+  h1{margin:0;font-size:20px;letter-spacing:0.2px} header small{color:var(--muted)}
+  main{max-width:1100px;margin:0 auto;padding:20px;display:grid;gap:16px;grid-template-columns:1.1fr 0.9fr}
+  .card{background:var(--panel);border:1px solid #1e2740;border-radius:12px;box-shadow:0 0 0 1px #0c1120 inset}
+  .card .head{padding:14px 14px;border-bottom:1px solid #1a2033;display:flex;align-items:center;gap:10px}
+  .card .body{padding:14px}
+  label{display:block;margin:8px 0 6px;color:var(--muted);font-size:13px}
+  textarea,input[type="text"]{width:100%;background:var(--soft);border:1px solid #202943;color:var(--ink);border-radius:10px;padding:10px 12px;font-family:var(--mono)}
+  textarea{min-height:140px;resize:vertical}
+  .row{display:flex;gap:10px;flex-wrap:wrap} .row > *{flex:1}
+  .toggle{display:flex;align-items:center;gap:10px;margin:6px 0;color:var(--muted);font-size:13px}
+  .grid{display:grid;gap:10px} .two{grid-template-columns:1fr 1fr}
+  .pill{display:inline-flex;align-items:center;gap:8px;background:#12192a;border:1px solid #1d2744;color:#b8c6eb;border-radius:999px;padding:7px 12px;font-size:12px}
+  .btn{cursor:pointer;background:linear-gradient(180deg,#1a7ab0,#145d84);border:1px solid #1b7cb3;color:#eaf6ff;border-radius:10px;padding:10px 12px;font-weight:600}
+  .btn.secondary{background:linear-gradient(180deg,#262d40,#1b2134); border:1px solid #283451; color:#cfe3ff}
+  .btn.ghost{background:transparent;border:1px dashed #2a3656;color:#9fb0d3}
+  .btn:disabled{opacity:0.5;cursor:not-allowed}
+  .llm-col{display:grid;gap:10px}
+  .llm{border:1px solid #223055;border-radius:10px;background:#0f1524}
+  .llm .bar{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #1f2947}
+  .llm .name{font-weight:600} .status{font-size:12px}
+  pre{white-space:pre-wrap;word-wrap:break-word;background:#0b1020;border:1px solid #1a2240;border-radius:10px;padding:10px;font-family:var(--mono);color:#cfe3ff}
+  .foot{padding:12px 14px;border-top:1px solid #1c243d;display:flex;gap:10px;flex-wrap:wrap}
+  .muted{color:#9fb0d3} .ok{color:var(--ok)} .warn{color:var(--warn)}
+  .caps{letter-spacing:0.12em;text-transform:uppercase;font-size:11px;color:#97aad6}
+  a{color:var(--accent)} .kbd{font-family:var(--mono); background:#0b1020; border:1px solid #1a2240; border-radius:6px; padding:2px 6px; font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>JustAsking <small>· multi-LLM prompt & synthesis (GP/ITPU lens)</small></h1>
+</header>
+
+<main>
+  <!-- LEFT -->
+  <section class="card" id="ideaCard">
+    <div class="head"><span class="pill">1</span> <strong>Describe your idea</strong></div>
+    <div class="body">
+      <label for="idea">One paragraph (or bullets) describing the goal, context, constraints.</label>
+      <textarea id="idea" placeholder="Example: We want to analyze EEG channels in real-time to detect attention lapses and adapt stimulation; edge constraints; ethics review required."></textarea>
+
+      <div class="grid two" style="margin-top:6px">
+        <div>
+          <label>Primary intent</label>
+          <select id="intent">
+            <option value="engineering">Engineering/spec</option>
+            <option value="research">Research/experiments</option>
+            <option value="product">Product/roadmap</option>
+            <option value="philosophy">Philosophy/ethics</option>
+          </select>
+        </div>
+        <div>
+          <label>Depth</label>
+          <select id="depth">
+            <option value="brief">Brief</option>
+            <option value="standard" selected>Standard</option>
+            <option value="deep">Deep dive</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <div class="toggle"><input type="checkbox" id="gpLens" checked/> <span>Info-Geometry lens</span></div>
+        <div class="toggle"><input type="checkbox" id="mockMode" checked/> <span>Mock mode (no API keys)</span></div>
+      </div>
+
+      <div class="muted" style="margin-top:8px">Which models?</div>
+      <div class="row">
+        <label class="pill"><input type="checkbox" id="chkGrok" checked/> Grok</label>
+        <label class="pill"><input type="checkbox" id="chkDeepSeek" checked/> DeepSeek</label>
+        <label class="pill"><input type="checkbox" id="chkGemini" checked/> Gemini</label>
+        <label class="pill"><input type="checkbox" id="chkClaude" checked/> Claude</label>
+      </div>
+
+      <div class="muted" style="margin-top:8px">Keys & Proxy (optional; saved locally)</div>
+      <div class="grid two">
+        <div><input id="keyGrok" placeholder="Grok API key (optional)" /></div>
+        <div><input id="keyDeepSeek" placeholder="DeepSeek API key (optional)" /></div>
+        <div><input id="keyGemini" placeholder="Gemini API key (optional)" /></div>
+        <div><input id="keyClaude" placeholder="Claude API key (optional)" /></div>
+      </div>
+      <div class="grid two" style="margin-top:6px">
+        <div><input id="proxyUrl" placeholder="Proxy base URL (e.g., https://your-worker.example/api)" /></div>
+        <button class="btn secondary" id="saveKeysBtn" type="button">Save keys locally</button>
+      </div>
+    </div>
+    <div class="foot">
+      <button class="btn" id="genPromptsBtn" type="button">Generate prompts</button>
+      <button class="btn secondary" id="runModelsBtn" type="button">Run models</button>
+      <button class="btn ghost" id="clearBtn" type="button">Clear</button>
+      <span class="muted">Tip: <span class="kbd">Ctrl/Cmd</span> + <span class="kbd">Enter</span> to generate prompts</span>
+    </div>
+  </section>
+
+  <!-- RIGHT -->
+  <section class="card">
+    <div class="head"><span class="pill">2</span> <strong>Results & synthesis</strong></div>
+    <div class="body">
+      <div class="muted">Generated prompts</div>
+      <div class="grid two" id="promptsGrid"></div>
+
+      <div class="muted" style="margin-top:12px">Model outputs</div>
+      <div class="llm-col" id="outputsCol"></div>
+
+      <div class="muted" style="margin-top:12px">Synthesis</div>
+      <pre id="synthesisBox" style="min-height:120px">—</pre>
+    </div>
+    <div class="foot">
+      <button class="btn" id="synthBtn" type="button">Synthesize</button>
+      <button class="btn secondary" id="exportMdBtn" type="button">Export Markdown</button>
+    </div>
+  </section>
+</main>
+
+<script>
+const S = {
+  idea: '', intent: 'engineering', depth: 'standard', gpLens: true,
+  models: {grok:true, deepseek:true, gemini:true, claude:true},
+  keys: {grok:'', deepseek:'', gemini:'', claude:'', proxy:''},
+  mock:true, prompts:{}, outputs:{}
+};
+const el = id => document.getElementById(id);
+
+function loadLocal() {
+  const v = JSON.parse(localStorage.getItem('ideaResonatorStore')||'{}');
+  if(v.keys){ S.keys = v.keys; }
+  if(v.lastIdea){ S.idea = v.lastIdea; el('idea').value = S.idea; }
+  el('keyGrok').value = S.keys.grok||'';
+  el('keyDeepSeek').value = S.keys.deepseek||'';
+  el('keyGemini').value = S.keys.gemini||'';
+  el('keyClaude').value = S.keys.claude||'';
+  el('proxyUrl').value = S.keys.proxy||'';
+}
+function saveLocal() {
+  localStorage.setItem('ideaResonatorStore', JSON.stringify({keys:S.keys, lastIdea:S.idea}));
+}
+loadLocal();
+
+/* UI bindings */
+el('intent').addEventListener('change', e=> S.intent = e.target.value );
+el('depth').addEventListener('change', e=> S.depth = e.target.value );
+el('gpLens').addEventListener('change', e=> S.gpLens = e.target.checked );
+el('mockMode').addEventListener('change', e=> S.mock = e.target.checked );
+el('idea').addEventListener('input', e=> { S.idea = e.target.value; saveLocal(); });
+['chkGrok','chkDeepSeek','chkGemini','chkClaude'].forEach(id=>{
+  el(id).addEventListener('change', e=>{
+    const k = id.replace('chk','').toLowerCase();
+    S.models[k] = e.target.checked;
+  });
+});
+el('saveKeysBtn').addEventListener('click', ()=>{
+  S.keys.grok = el('keyGrok').value.trim();
+  S.keys.deepseek = el('keyDeepSeek').value.trim();
+  S.keys.gemini = el('keyGemini').value.trim();
+  S.keys.claude = el('keyClaude').value.trim();
+  S.keys.proxy = el('proxyUrl').value.trim();
+  saveLocal();
+  alert('Saved locally. Use a proxy—do not expose keys in the browser.');
+});
+document.addEventListener('keydown', (e)=>{
+  if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ genPrompts(); }
+});
+el('genPromptsBtn').addEventListener('click', genPrompts);
+el('runModelsBtn').addEventListener('click', runModels);
+el('synthBtn').addEventListener('click', synthesize);
+el('exportMdBtn').addEventListener('click', exportMarkdown);
+el('clearBtn').addEventListener('click', ()=>{
+  S.prompts = {}; S.outputs = {}; renderPrompts({}); renderOutputs({});
+  el('synthesisBox').textContent = '—';
+});
+
+/* Prompt Generator */
+function autoTags(txt){
+  const t = (txt||'').toLowerCase(); const tags = [];
+  if(/eeg|brain|neuro|bci/.test(t)) tags.push('neuroscience','streaming');
+  if(/mri|image|registration|pixel|voxel/.test(t)) tags.push('imaging');
+  if(/robot|imu|lidar|control|rl/.test(t)) tags.push('robotics','control');
+  if(/quantum|qec|syndrome|qubit/.test(t)) tags.push('quantum');
+  if(/ethic|privacy|bias|safety/.test(t)) tags.push('ethics');
+  if(/startup|business|invest|market/.test(t)) tags.push('business');
+  if(/mutual information|entropy|ksg|histogram|k\-nn/.test(t)) tags.push('itpu-core');
+  return tags;
+}
+function ctxBrief(intent, depth){
+  const d = {brief:'short', standard:'normal', deep:'exhaustive'}[depth];
+  const role = {engineering:'engineer', research:'researcher', product:'product lead', philosophy:'philosopher'}[intent];
+  return `Write like a ${role}. Level: ${d}. Use numbered steps and concrete checks when possible.`;
+}
+function gpAddendum(gp){
+  if(!gp) return '';
+  return `
+
+--- GP/ITPU lens
+- Treat information flow as a first-class signal. Consider MI (hist or KSG) and entropy for time-series.
+- If feedback exists, discuss ringing vs damping; suggest practical checks (PSD peak, overshoot count).
+- Prefer falsifiable outputs: plots/CSVs, acceptance tests, and “done when” criteria.`;
+}
+function makePromptBase(idea,intent,depth,gp){
+  const tags = autoTags(idea).join(', ') || 'general';
+  return `Context
+- Idea: ${idea.trim()}
+- Tags: ${tags}
+
+Request
+- Produce a plan aligned to "${intent}" with "${depth}" depth.
+- Include: (1) objectives, (2) minimal steps, (3) artifacts (files/plots), (4) acceptance criteria, (5) risks+mitigations.
+${gpAddendum(gp)}\n`;
+}
+const templates = {
+  grok: (base) => `You are witty but precise. Embrace brevity and sharp action items.
+${base}
+Style
+- Use bullet points and short code blocks.
+- If math is needed, include compact formulas.
+
+Deliverable
+- A one-page plan with a tiny TODO list.`,
+  deepseek: (base)=> `You are a rigorous systems researcher. Optimize for reproducibility.
+${base}
+Add
+- If time-series: show how to compute MI via histogram AND KSG (with k parameter).
+- Add small Python snippets with NumPy/SciPy.
+
+Deliverable
+- Step-by-step with commands and expected file paths.`,
+  gemini: (base)=> `You are a product+research bridge. Clarify user impact and edge cases.
+${base}
+Add
+- Call out ethical and privacy guardrails.
+- Provide an A/B experiment framing and success metrics.
+
+Deliverable
+- Roadmap box (Now/Next/Later) + success metrics.`,
+  claude: (base)=> `You are a careful technical writer. Provide structure, caveats, and logical sequencing.
+${base}
+Add
+- “Assumptions” and “Open questions” sections.
+- Note where approximations apply (Padé(1,1), KSG bias/variance).
+
+Deliverable
+- Structured plan with numbered sections and checklists.`
+};
+function genPrompts(){
+  const idea = (S.idea||'').trim();
+  if(!idea){ alert('Please enter an idea.'); return; }
+  const base = makePromptBase(idea, S.intent, S.depth, S.gpLens);
+  const out = {};
+  if(S.models.grok) out.grok = templates.grok(base);
+  if(S.models.deepseek) out.deepseek = templates.deepseek(base);
+  if(S.models.gemini) out.gemini = templates.gemini(base);
+  if(S.models.claude) out.claude = templates.claude(base);
+  S.prompts = out; renderPrompts(out);
+}
+
+/* Renderers */
+function renderPrompts(prompts){
+  const grid = el('promptsGrid'); grid.innerHTML='';
+  const entries = Object.entries(prompts);
+  if(entries.length===0){ grid.innerHTML = '<div class="muted">No prompts yet.</div>'; return; }
+  for(const [name,txt] of entries){
+    const box = document.createElement('div');
+    box.className='llm';
+    box.innerHTML = `
+      <div class="bar"><span class="name">${name.toUpperCase()} prompt</span><span class="status caps">ready</span></div>
+      <div class="body"><pre>${txt}</pre></div>`;
+    grid.appendChild(box);
+  }
+}
+function renderOutputs(outputs){
+  const col = el('outputsCol'); col.innerHTML='';
+  const entries = Object.entries(outputs);
+  if(entries.length===0){ col.innerHTML = '<div class="muted">No outputs yet.</div>'; return; }
+  for(const [name,txt] of entries){
+    const wrap = document.createElement('div');
+    const ok = txt && !/error/i.test(txt);
+    wrap.className='llm';
+    wrap.innerHTML = `
+      <div class="bar">
+        <span class="name">${name.toUpperCase()} output</span>
+        <span class="status ${ok?'ok':'warn'}">${ok?'ok':'error'}</span>
+      </div>
+      <div class="body"><pre>${txt||'—'}</pre></div>`;
+    col.appendChild(wrap);
+  }
+}
+
+/* Calls */
+function mockResponse(name, prompt){
+  const seed = name + (prompt||'');
+  const hash = [...seed].reduce((a,c)=>((a<<5)-a)+c.charCodeAt(0),0)>>>0;
+  const pick = (arr)=> arr[hash%arr.length];
+  const todo = ['Load data','Compute MI','Plot heatmap','Write CSV','Acceptance test','Risk check'];
+  return [
+    `Summary — ${name}:`,
+    `• Focus: ${pick(['real-time MI','hysteresis test','motif selection','entropy drift'])}`,
+    `• Output files: results/${name}/mi.csv, results/${name}/plot.png`,
+    `Plan:`,
+    ...todo.map((t,i)=>`${i+1}. ${t}`),
+    `Risks: KSG bias (small N), streaming latency`,
+    `Done when: median|err| < 15% vs baseline, runtime < 200 ms`
+  ].join('\n');
+}
+async function callModel(name, prompt){
+  if(S.mock) return mockResponse(name, prompt);
+  const key = S.keys[{grok:'grok', deepseek:'deepseek', gemini:'gemini', claude:'claude'}[name]];
+  const base = S.keys.proxy;
+  if(!base){ return `Error: No proxy URL configured for ${name}.`; }
+  try{
+    const r = await fetch(`${base}/${name}`, {
+      method:'POST', headers:{'Content-Type':'application/json', 'Authorization': key?`Bearer ${key}`:undefined},
+      body: JSON.stringify({prompt, intent:S.intent, depth:S.depth})
+    });
+    if(!r.ok) throw new Error(await r.text());
+    const j = await r.json();
+    return (j.output||'').trim() || '—';
+  }catch(e){
+    return `Error calling ${name}: ${e.message}`;
+  }
+}
+async function runModels(){
+  if(Object.keys(S.prompts).length===0){ alert('Generate prompts first.'); return; }
+  const outs = {}; renderOutputs({'…':'Running selected models…'});
+  for(const [name,prompt] of Object.entries(S.prompts)){
+    outs[name] = await callModel(name, prompt);
+  }
+  S.outputs = outs; renderOutputs(outs);
+}
+
+/* Synthesis & Export */
+function uniq(arr){ return [...new Set(arr.map(s=>s.trim()))].filter(Boolean); }
+function synthesize(){
+  const outs = S.outputs; const keys = Object.keys(outs);
+  if(keys.length===0){ el('synthesisBox').textContent='—'; return; }
+  const text = keys.map(k=>`[${k}]\n${outs[k]}`).join('\n\n');
+  const lines = text.split('\n').map(s=>s.trim()).filter(Boolean);
+  const todo = lines.filter(s=>/^\d+\./.test(s));
+  const risks = lines.filter(s=>/risk/i.test(s));
+  const files = lines.filter(s=>/\.csv|\.png|results\//i.test(s));
+  const acceptance = lines.filter(s=>/done when|acceptance/i.test(s));
+  const summary = [
+    `# Synthesis — JustAsking`,
+    `**Intent**: ${S.intent} • **Depth**: ${S.depth} • **GP lens**: ${S.gpLens? 'on':'off'}`,
+    `\n## Common action items`,
+    ...uniq(todo).slice(0,8).map(x=>`- ${x.replace(/^\d+\.\s*/,'')}`),
+    `\n## Expected artifacts`,
+    ...uniq(files).slice(0,8).map(f=>`- ${f}`),
+    `\n## Acceptance criteria (aggregated)`,
+    ...uniq(acceptance).slice(0,6).map(a=>`- ${a}`),
+    `\n## Risks & mitigations`,
+    ...uniq(risks).slice(0,6).map(r=>`- ${r}`),
+    `\n## Notes`,
+    `- Prefer HIST MI for speed; add KSG for nonlinear checks.`,
+    `- Save a tiny timing table and a markdown report under results/.`,
+  ].join('\n');
+  el('synthesisBox').textContent = summary;
+  return summary;
+}
+function exportMarkdown(){
+  const md = synthesize() || el('synthesisBox').textContent || '# JustAsking';
+  const blob = new Blob([md], {type:'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'justasking_report.md'; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+}
+</script>
+</body>
+</html>
