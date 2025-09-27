@@ -378,5 +378,62 @@ function exportMarkdown(){
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 </script>
+
+<!-- Minimal UI (add only if missing) -->
+<form id="prompt-form" style="margin:1rem 0;">
+  <textarea id="prompt-input" rows="5" style="width:100%;" placeholder="Type your task…"></textarea>
+  <button type="submit">Run fan-out</button>
+</form>
+<div id="results"></div>
+
+<script>
+  // Set this to the deployed Worker URL after deploy
+  window.JUSTASKING_PROXY = "https://YOUR-WORKER-SUBDOMAIN.workers.dev";
+
+  // Models to query via OpenRouter (edit as desired)
+  window.JUSTASKING_MODELS = [
+    "anthropic/claude-3.5-sonnet",
+    "openai/gpt-4.1",
+    "google/gemini-1.5-pro"
+  ];
+
+  async function fanoutPrompt(userText) {
+    const res = await fetch(`${window.JUSTASKING_PROXY}/fanout`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        task: userText,
+        system: "You are a specialist LLM for an engineering team. Be concise.",
+        models: window.JUSTASKING_MODELS
+      })
+    });
+    if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
+    const { results } = await res.json();
+    return results; // [{model, content}, ...]
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const form = document.querySelector("#prompt-form");
+    const input = document.querySelector("#prompt-input");
+    const out = document.querySelector("#results");
+    if (!form || !input || !out) return;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      out.textContent = "Running fan-out…";
+      try {
+        const results = await fanoutPrompt(input.value.trim());
+        out.innerHTML = results.map(r => (
+          `<section>
+             <h3>${r.model}</h3>
+             <pre style="white-space:pre-wrap">${r.content.replace(/</g,"&lt;")}</pre>
+           </section>`
+        )).join("<hr/>");
+      } catch (err) {
+        out.textContent = `Error: ${err.message}`;
+      }
+    });
+  });
+</script>
 </body>
 </html>
