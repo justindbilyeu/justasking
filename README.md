@@ -38,3 +38,56 @@ Issues and PRs welcome! Keep PRs small, add a quick before/after note in the des
 
 ## License
 You choose; default is “all rights reserved” for now. If you prefer Apache-2.0 or MIT, add a `LICENSE` file. (I can drop one in if you want Apache again.)
+
+## Multi-LLM Fan-Out (Two Ways)
+
+We support two ways to dispatch a single task to multiple models and collect replies.
+
+### 1) GitHub Actions (issue comment trigger)
+
+- Add a new issue with your task.
+- Comment on the issue with:
+
+```
+/fanout
+```
+
+- A workflow calls multiple models via OpenRouter and posts an aggregated comment.
+
+**Setup**
+- Repo secret: `OPENROUTER_API_KEY`
+
+**Files**
+- `.github/workflows/fanout.yml`
+- `.github/scripts/fanout.py`
+
+### 2) Live UI via Cloudflare Worker Proxy
+
+The site calls a Cloudflare Worker that fans out to several models. This keeps API keys off the client.
+
+**Setup**
+- Deploy Worker in `worker/` and set secret:
+  - `wrangler secret put OPENROUTER_API_KEY`
+- Set the Worker URL in `index.html`:
+```html
+<script>
+  window.JUSTASKING_PROXY = "https://YOUR-WORKER-SUBDOMAIN.workers.dev";
+</script>
+```
+
+**Files**
+- `worker/worker.js`
+- `worker/wrangler.toml`
+- `index.html` (script block wiring the form to /fanout)
+
+### Changing Models
+
+Edit the model list in:
+- `.github/scripts/fanout.py` → `MODELS = [...]`
+- `index.html` → `window.JUSTASKING_MODELS = [...]`
+
+### Notes
+
+- No API keys are committed to the repo.
+- Errors return as **ERROR:** … per-model so one failure doesn’t block others.
+
